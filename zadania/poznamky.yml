@@ -1,0 +1,315 @@
+heat_template_version: 2018-08-31
+
+description: v1.0.0 Template for network
+#############
+# Parametre #
+#############
+parameters:
+  ############
+  ## Router ##
+  ############
+  RouterName:
+    description: RouterName
+    type: string
+    default: router
+
+  RouterIp1:
+    description: RouterIp
+    type: string
+    default: 10.0.1.1
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+  #############
+  ## NETWROK ##
+  #############
+
+  SubnetCidr1:
+    description: SubnetCidr1
+    type: string
+    default: 10.0.1.0/24
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+$"
+
+  SubnetCidr2:
+    description: SubnetCidr2
+    type: string
+    default: 172.16.99.0/24
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+$"
+  ###########
+  ## PC ip ##
+  ###########
+  PC1Ip:
+    description: PC1Ip
+    type: string
+    default: 10.0.1.10
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+  PC2Ip:
+    description: PC2Ip
+    type: string
+    default: 172.16.99.20
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+  #############
+  ## SSH key ##
+  #############
+  SSHKeyName:
+    description: SSHKeyName
+    type: string
+
+resources:
+  ########################
+  ### NETWORK & SUBNET ###
+  ########################
+
+  Network1:
+    type: OS::Neutron::Net
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "network1"]] }
+      admin_state_up: True
+      shared: False
+
+  Network2:
+    type: OS::Neutron::Net
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "network2"]] }
+      admin_state_up: True
+      shared: False
+
+  Subnet1:
+    type: OS::Neutron::Subnet
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "subnet1"]] }
+      cidr: { get_param: SubnetCidr1 }
+      gateway_ip: { get_param: RouterIp1 }
+      dns_nameservers:
+        - 8.8.8.8
+        - 8.8.4.4
+      enable_dhcp: True
+      network: { get_resource: Network1 }
+
+  Subnet2:
+    type: OS::Neutron::Subnet
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "subnet2"]] }
+      cidr: { get_param: SubnetCidr2 }
+      gateway_ip: { get_param: RouterIp2 }
+      dns_nameservers:
+        - 8.8.8.8
+        - 8.8.4.4
+      enable_dhcp: True
+      network: { get_resource: Network2 }
+
+  ##############
+  ### ROUTER ###
+  ##############
+  RouterPort1:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        { list_join: ["-", [{ get_param: "OS::stack_name" }, "router-port1"]] }
+      fixed_ips:
+        - subnet_id: { get_resource: Subnet1 }
+          ip_address: { get_param: RouterIp1 }
+      network: { get_resource: Network1 }
+
+  RouterPort2:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        { list_join: ["-", [{ get_param: "OS::stack_name" }, "router-port2"]] }
+      fixed_ips:
+        - subnet_id: { get_resource: Subnet2 }
+          ip_address: { get_param: RouterIp2 }
+      network: { get_resource: Network2 }
+
+  Router:
+    type: OS::Neutron::Router
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "router"]] }
+      admin_state_up: True
+      external_gateway_info: { network: ext-net }
+
+  RouterInterface1:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router: { get_resource: Router }
+      port: { get_resource: RouterPort1 }
+
+  RouterInterface2:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router: { get_resource: Router }
+      port: { get_resource: RouterPort2 }
+  ###############
+  ## SEC GROUP ##
+  ###############
+
+  PC1PrivateSecurityGroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name:
+        {
+          list_join:
+            ["-", [{ get_param: "OS::stack_name" }, "PC1PrivateSecurityGroup"]],
+        }
+      rules: [
+          ### INGRESS RULES
+          ## ICMP
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: icmp,
+            remote_ip_prefix: 0.0.0.0/0,
+          },
+
+          ## SSH
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 22,
+            port_range_max: 22,
+            remote_ip_prefix: 0.0.0.0/0,
+          },
+
+          ## RDP
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 3389,
+            port_range_max: 3389,
+            remote_ip_prefix: 0.0.0.0/0,
+          },
+
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: udp,
+            port_range_min: 3389,
+            port_range_max: 3389,
+            remote_ip_prefix: 0.0.0.0/0,
+          },
+
+          ## HTTP
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 80,
+            port_range_max: 80,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+
+          ## HTTPS
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 443,
+            port_range_max: 443,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+
+          ## DNS
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 53,
+            port_range_max: 53,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: udp,
+            port_range_min: 53,
+            port_range_max: 53,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+
+          ## VSETKA KOMUNIKACIA Z DRUHEJ SIETE
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            remote_ip_prefix: 172.16.99.0/24,
+          },
+
+          # Povolenie vsetkeho
+
+          # Povolenie icmp out
+          {
+            direction: egress,
+            ethertype: IPv4,
+            protocol: icmp,
+            remote_ip_prefix: 0.0.0.0/0,
+          },
+
+          # SMB
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 445,
+            port_range_max: 445,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+
+          { direction: egress, ethertype: IPv4, remote_ip_prefix: 0.0.0.0/0 },
+        ]
+
+  ########
+  ## PC ##
+  RouterPCPublicPort:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        {
+          list_join:
+            ["-", [{ get_param: "OS::stack_name" }, "RouterPCPublicPort"]],
+        }
+      security_groups:
+        - { get_resource: PermitAllPrivateSecurityGroup }
+      network: ext-net
+
+  RouterPCPort:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        { list_join: ["-", [{ get_param: "OS::stack_name" }, "RouterPCPort"]] }
+      security_groups:
+        - { get_resource: PermitAllPrivateSecurityGroup }
+      fixed_ips:
+        - subnet_id: { get_resource: Subnet }
+          ip_address: { get_param: RouterPCIp }
+      network: { get_resource: Network }
+
+  RouterPCServer:
+    type: OS::Nova::Server
+    properties:
+      name:
+        {
+          list_join: ["-", [{ get_param: "OS::stack_name" }, "RouterPCServer"]],
+        }
+      availability_zone: "compute1"
+      flavor: "linux"
+      image: "cirros"
+      key_name: { get_param: SSHKeyName }
+      networks:
+        - port: { get_resource: RouterPCPort }
+        - port: { get_resource: RouterPCPublicPort }
+      user_data_format: RAW
+      user_data_update_policy: REPLACE
+      user_data: |
+        #!/bin/bash
+        apt-get update -y
+        apt-get upgrade -y
+        echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE

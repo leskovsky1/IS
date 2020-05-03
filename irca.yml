@@ -1,0 +1,227 @@
+description: v1.0.0 Template for network
+heat_template_version: '2018-08-31'
+parameters:
+  Apache2Ip:
+    constraints:
+    - {allowed_pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'}
+    default: 10.0.0.25
+    description: Apache2Ip
+    type: string
+  JumpIp:
+    constraints:
+    - {allowed_pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'}
+    default: 10.0.0.3
+    description: JumpIp
+    type: string
+  RouterIp:
+    constraints:
+    - {allowed_pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'}
+    default: 10.0.0.1
+    description: RouterIp
+    type: string
+  RouterName: {default: router, description: RouterName, type: string}
+  SSHKeyName: {description: SSHKeyName, type: string}
+  Squid3Ip:
+    constraints:
+    - {allowed_pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'}
+    default: 10.0.0.10
+    description: Squid3Ip
+    type: string
+  SubnetCidr:
+    constraints:
+    - {allowed_pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$'}
+    default: 10.0.0.0/24
+    description: SubnetCidr
+    type: string
+resources:
+  Apache2Port:
+    properties:
+      admin_state_up: true
+      fixed_ips:
+      - ip_address: {get_param: Apache2Ip}
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - Apache2Port
+      network: {get_resource: Network}
+    type: OS::Neutron::Port
+  Apache2Server:
+    properties:
+      availability_zone: compute1
+      flavor: linux
+      image: ubuntu_server_18.04_amd64_Openstack
+      key_name: {get_param: SSHKeyName}
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - apache2
+      networks:
+      - port: {get_resource: Apache2Port}
+      user_data: '#!/bin/bash
+
+        sudo ifconfig ens3 up
+
+        sudo ip address add 10.0.0.25/24 dev ens3
+
+        sudo ip route add 10.0.0.3/32 dev ens3
+
+        apt-get update -y
+
+        apt-get upgrade -y
+
+        '
+      user_data_format: RAW
+      user_data_update_policy: REPLACE
+    type: OS::Nova::Server
+  JumpPortIn:
+    properties:
+      admin_state_up: true
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - JumpPortIn
+      network: ext-net
+      security_groups:
+      - {get_resource: JumpPrivateSecurityGroup}
+    type: OS::Neutron::Port
+  JumpPrivateSecurityGroup:
+    properties:
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - JumpPrivateSecurityGroup
+      rules:
+      - {direction: ingress, ethertype: IPv4, port_range_max: 22, port_range_min: 22,
+        protocol: tcp, remote_ip_prefix: 0.0.0.0/0}
+      - {direction: ingress, ethertype: IPv4, protocol: icmp, remote_ip_prefix: 0.0.0.0/0}
+      - {direction: ingress, ethertype: IPv4, port_range_max: 80, port_range_min: 80,
+        protocol: tcp, remote_ip_prefix: 0.0.0.0/0}
+      - {direction: ingress, ethertype: IPv4, port_range_max: 443, port_range_min: 443,
+        protocol: tcp, remote_ip_prefix: 0.0.0.0/0}
+      - {direction: ingress, ethertype: IPv4, protocol: icmp, remote_ip_prefix: 0.0.0.0/0}
+      - {direction: egress, ethertype: IPv4, port_range_max: 65535, port_range_min: 1,
+        protocol: tcp, remote_ip_prefix: 0.0.0.0/0}
+      - {direction: egress, ethertype: IPv4, port_range_max: 65535, port_range_min: 1,
+        protocol: udp, remote_ip_prefix: 0.0.0.0/0}
+      - {direction: egress, ethertype: IPv4, port_range_max: 65535, port_range_min: 1,
+        protocol: tcp, remote_ip_prefix: 0.0.0.0/0}
+      - {direction: egress, ethertype: IPv4, port_range_max: 65535, port_range_min: 1,
+        protocol: tcp, remote_ip_prefix: 0.0.0.0/0}
+    type: OS::Neutron::SecurityGroup
+  JumpServer:
+    properties:
+      availability_zone: compute1
+      flavor: linux
+      image: ubuntu_server_18.04_amd64_Openstack
+      key_name: {get_param: SSHKeyName}
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - jump
+      networks:
+      - port: {get_resource: JumpPortIn}
+      user_data: '#!/bin/bash
+
+        sudo ifconfig ens4 up
+
+        sudo ip address add 10.0.0.3/24 dev ens4
+
+        sudo ip route add 10.0.0.0/24 dev ens4
+
+        apt-get update -y
+
+        apt-get upgrade -y
+
+        '
+      user_data_format: RAW
+      user_data_update_policy: REPLACE
+    type: OS::Nova::Server
+  Network:
+    properties:
+      admin_state_up: true
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - network
+      shared: false
+    type: OS::Neutron::Net
+  Router:
+    properties:
+      admin_state_up: true
+      external_gateway_info: {network: ext-net}
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - router
+    type: OS::Neutron::Router
+  RouterInterface:
+    properties:
+      port: {get_resource: RouterPort}
+      router: {get_resource: Router}
+    type: OS::Neutron::RouterInterface
+  RouterPort:
+    properties:
+      fixed_ips:
+      - ip_address: {get_param: RouterIp}
+        subnet_id: {get_resource: Subnet}
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - router-port
+      network: {get_resource: Network}
+    type: OS::Neutron::Port
+  Squid3Port:
+    properties:
+      fixed_ips:
+      - ip_address: {get_param: Squid3Ip}
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - Squid3Port
+      network: {get_resource: Network}
+    type: OS::Neutron::Port
+  Squid3Server:
+    properties:
+      availability_zone: compute1
+      flavor: linux
+      image: ubuntu_server_18.04_amd64_Openstack
+      key_name: {get_param: SSHKeyName}
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - squid3
+      networks:
+      - port: {get_resource: Squid3Port}
+      user_data: '#!/bin/bash
+
+        apt-get update -y
+
+        apt-get upgrade -y
+
+        '
+      user_data_format: RAW
+      user_data_update_policy: REPLACE
+    type: OS::Nova::Server
+  Subnet:
+    properties:
+      cidr: {get_param: SubnetCidr}
+      dns_nameservers: [8.8.8.8, 8.8.4.4]
+      enable_dhcp: true
+      gateway_ip: {get_param: RouterIp}
+      name:
+        list_join:
+        - '-'
+        - - {get_param: 'OS::stack_name'}
+          - subnet
+      network: {get_resource: Network}
+    type: OS::Neutron::Subnet

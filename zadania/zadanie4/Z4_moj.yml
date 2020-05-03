@@ -1,0 +1,325 @@
+heat_template_version: 2018-08-31
+
+description: v1.0.0 Template for network
+
+parameters:
+  SubnetCidr1:
+    description: SubnetCidr1
+    type: string
+    default: 10.255.255.0/24
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+$"
+  PC1Ip:
+    description: PC1Ip
+    type: string
+    default: 10.255.255.10
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+  PC2Ip:
+    description: PC2Ip
+    type: string
+    default: 10.255.255.20
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+  SSHKeyName:
+    description: SSHKeyName
+    type: string
+
+  RouterPCIp:
+    description: RouterPCIp
+    type: string
+    default: 10.255.255.1
+    constraints:
+      - allowed_pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+resources:
+  Network1:
+    type: OS::Neutron::Net
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "network1"]] }
+      admin_state_up: True
+      shared: False
+
+  Subnet1:
+    type: OS::Neutron::Subnet
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "subnet1"]] }
+      cidr: { get_param: SubnetCidr1 }
+      gateway_ip: { get_param: RouterPCIp }
+      dns_nameservers:
+        - 8.8.8.8
+        - 8.8.4.4
+      enable_dhcp: True
+      network: { get_resource: Network1 }
+
+  PCPrivateSecurityGroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name:
+        {
+          list_join:
+            ["-", [{ get_param: "OS::stack_name" }, "PCPrivateSecurityGroup"]],
+        }
+      rules: [
+          ### INGRESS RULES
+          ## ICMP
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: icmp,
+            remote_ip_prefix: 0.0.0.0/0,
+          },
+          ## SSH
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 22,
+            port_range_max: 22,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+
+          ## RDP
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 3389,
+            port_range_max: 3389,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: udp,
+            port_range_min: 3389,
+            port_range_max: 3389,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+          ## HTTP
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 80,
+            port_range_max: 80,
+            remote_ip_prefix: 10.0.0.0/8,
+          },
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 80,
+            port_range_max: 80,
+            remote_ip_prefix: 172.16.0.0/12,
+          },
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 80,
+            port_range_max: 80,
+            remote_ip_prefix: 192.168.0.0/16,
+          },
+
+          ## HTTPS
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 443,
+            port_range_max: 443,
+            remote_ip_prefix: 10.0.0.0/8,
+          },
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 443,
+            port_range_max: 443,
+            remote_ip_prefix: 172.16.0.0/12,
+          },
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 443,
+            port_range_max: 443,
+            remote_ip_prefix: 192.168.0.0/16,
+          },
+          ## DNS
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 53,
+            port_range_max: 53,
+            remote_ip_prefix: 10.0.0.0/8,
+          },
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 53,
+            port_range_max: 53,
+            remote_ip_prefix: 172.16.0.0/12,
+          },
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 53,
+            port_range_max: 53,
+            remote_ip_prefix: 192.168.0.0/16,
+          },
+
+          ### EGRESS RULES
+
+          { direction: egress, ethertype: IPv4, remote_ip_prefix: 0.0.0.0/0 }, # Povolenie vsetkeho
+
+        ]
+  PC2PrivateSecurityGroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name:
+        {
+          list_join:
+            ["-", [{ get_param: "OS::stack_name" }, "PC2PrivateSecurityGroup"]],
+        }
+      rules: [
+          ### INGRESS RULES
+          ## SMB
+          {
+            direction: ingress,
+            ethertype: IPv4,
+            protocol: tcp,
+            port_range_min: 445,
+            port_range_max: 445,
+            remote_ip_prefix: 158.193.0.0/16,
+          },
+        ]
+
+  PermitAllPrivateSecurityGroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name:
+        {
+          list_join:
+            [
+              "-",
+              [
+                { get_param: "OS::stack_name" },
+                "PermitAllPrivateSecurityGroup",
+              ],
+            ],
+        }
+      rules: [
+          ### INGRESS RULES
+          { direction: ingress, ethertype: IPv4, remote_ip_prefix: 0.0.0.0/0 },
+          { direction: egress, ethertype: IPv4, remote_ip_prefix: 0.0.0.0/0 },
+        ]
+
+  PC1Port:
+    type: OS::Neutron::Port
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "PC1Port"]] }
+      security_groups:
+        - { get_resource: PCPrivateSecurityGroup }
+      fixed_ips:
+        - subnet_id: { get_resource: Subnet1 }
+          ip_address: { get_param: PC1Ip }
+      network: { get_resource: Network1 }
+
+  PC1Server:
+    type: OS::Nova::Server
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "PC1"]] }
+      availability_zone: "compute1"
+      flavor: "linux"
+      image: "cirros"
+      key_name: { get_param: SSHKeyName }
+      networks:
+        - port: { get_resource: PC1Port }
+      user_data_format: RAW
+      user_data_update_policy: REPLACE
+      user_data: |
+        #!/bin/bash
+        apt-get update -y
+        apt-get upgrade -y
+  PC2Port:
+    type: OS::Neutron::Port
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "PC2Port"]] }
+      security_groups:
+        - { get_resource: PCPrivateSecurityGroup }
+        - { get_resource: PC2PrivateSecurityGroup }
+      fixed_ips:
+        - subnet_id: { get_resource: Subnet1 }
+          ip_address: { get_param: PC2Ip }
+      network: { get_resource: Network1 }
+
+  PC2Server:
+    type: OS::Nova::Server
+    properties:
+      name: { list_join: ["-", [{ get_param: "OS::stack_name" }, "PC2"]] }
+      availability_zone: "compute1"
+      flavor: "linux"
+      image: "cirros"
+      key_name: { get_param: SSHKeyName }
+      networks:
+        - port: { get_resource: PC2Port }
+      user_data_format: RAW
+      user_data_update_policy: REPLACE
+      user_data: |
+        #!/bin/bash
+        apt-get update -y
+        apt-get upgrade -y
+
+  RouterPCPublicPort:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        {
+          list_join:
+            ["-", [{ get_param: "OS::stack_name" }, "RouterPCPublicPort"]],
+        }
+      security_groups:
+        - { get_resource: PermitAllPrivateSecurityGroup }
+      network: ext-net
+
+  RouterPCPort:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        { list_join: ["-", [{ get_param: "OS::stack_name" }, "RouterPCPort"]] }
+      security_groups:
+        - { get_resource: PermitAllPrivateSecurityGroup }
+      fixed_ips:
+        - subnet_id: { get_resource: Subnet1 }
+          ip_address: { get_param: RouterPCIp }
+      network: { get_resource: Network1 }
+
+  RouterPCServer:
+    type: OS::Nova::Server
+    properties:
+      name:
+        {
+          list_join: ["-", [{ get_param: "OS::stack_name" }, "RouterPCServer"]],
+        }
+      availability_zone: "compute1"
+      flavor: "linux"
+      image: "cirros"
+      key_name: { get_param: SSHKeyName }
+      networks:
+        - port: { get_resource: RouterPCPort }
+        - port: { get_resource: RouterPCPublicPort }
+      user_data_format: RAW
+      user_data_update_policy: REPLACE
+      user_data: |
+        #!/bin/bash
+        apt-get update -y
+        apt-get upgrade -y
+        echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
